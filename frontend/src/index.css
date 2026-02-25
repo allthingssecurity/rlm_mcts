@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* D3 tree styles */
+.mcts-tree .node circle {
+  stroke-width: 2px;
+  transition: all 0.3s ease;
+}
+
+.mcts-tree .node text {
+  font-size: 11px;
+  fill: #d1d5db;
+}
+
+.mcts-tree .link {
+  fill: none;
+  stroke: #4b5563;
+  stroke-width: 1.5px;
+  transition: stroke 0.3s ease;
+}
+
+.mcts-tree .link.highlighted {
+  stroke: #f59e0b;
+  stroke-width: 3px;
+}
+
+.mcts-tree .node.new circle {
+  animation: nodeAppear 0.6s ease-out;
+}
+
+@keyframes nodeAppear {
+  0% {
+    r: 0;
+    opacity: 0;
+  }
+  50% {
+    r: 14;
+  }
+  100% {
+    r: 10;
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-slow {
+  animation: pulse 2s ease-in-out infinite;
+}
