@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { TreeSnapshot, ReasoningNode } from "../types";
+import { TreeSnapshot, ReasoningNode, PlainRLMStep } from "../types";
 
 interface Props {
   answer: string | null;
@@ -7,7 +7,10 @@ interface Props {
   searching: boolean;
   tree: TreeSnapshot;
   contextChars: number;
+  comparing: boolean;
+  plainSteps: PlainRLMStep[];
   onSendQuestion: (question: string) => void;
+  onSendCompare: (question: string) => void;
 }
 
 export default function ChatPanel({
@@ -16,13 +19,21 @@ export default function ChatPanel({
   searching,
   tree,
   contextChars,
+  comparing,
+  plainSteps,
   onSendQuestion,
+  onSendCompare,
 }: Props) {
   const [question, setQuestion] = useState("");
+  const [compareMode, setCompareMode] = useState(false);
 
   const handleSend = () => {
     if (question.trim() && !searching) {
-      onSendQuestion(question.trim());
+      if (compareMode) {
+        onSendCompare(question.trim());
+      } else {
+        onSendQuestion(question.trim());
+      }
       setQuestion("");
     }
   };
@@ -52,16 +63,21 @@ export default function ChatPanel({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              RLM REPL + MCTS reasoning...
+              {comparing ? "Running Plain RLM + MCTS comparison..." : "RLM REPL + MCTS reasoning..."}
             </div>
             {contextChars > 0 && (
               <p className="text-xs text-gray-600">
                 Context: {(contextChars / 1000).toFixed(0)}K chars loaded into REPL
               </p>
             )}
+            {comparing && plainSteps.length > 0 && (
+              <p className="text-xs text-gray-600">
+                Plain RLM: {plainSteps.length} step{plainSteps.length !== 1 ? "s" : ""} complete
+              </p>
+            )}
             {codeNodes.length > 0 && (
               <p className="text-xs text-gray-600">
-                {codeNodes.length} code strategies explored, {successfulCode.length} successful
+                MCTS: {codeNodes.length} code strategies explored, {successfulCode.length} successful
               </p>
             )}
           </div>
@@ -127,26 +143,49 @@ export default function ChatPanel({
         )}
       </div>
 
+      {/* Compare toggle */}
+      <div className="flex items-center gap-2 mb-2">
+        <button
+          className={`text-xs px-2 py-1 rounded border transition-colors ${
+            compareMode
+              ? "bg-purple-900/50 border-purple-600 text-purple-300"
+              : "bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-400"
+          }`}
+          onClick={() => setCompareMode(!compareMode)}
+          disabled={searching}
+        >
+          {compareMode ? "Compare: ON" : "Compare: OFF"}
+        </button>
+        {compareMode && (
+          <span className="text-xs text-gray-600">
+            Runs Plain RLM vs MCTS side-by-side
+          </span>
+        )}
+      </div>
+
       {/* Input */}
       <div className="flex gap-2">
         <input
           className="flex-1 bg-gray-800 text-gray-200 rounded px-3 py-2 text-sm
                      placeholder-gray-600 border border-gray-700 focus:border-blue-500
                      focus:outline-none"
-          placeholder="Ask about the video..."
+          placeholder={compareMode ? "Ask to compare Plain vs MCTS..." : "Ask about the video..."}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={searching}
         />
         <button
-          className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700
-                     disabled:text-gray-500 text-white font-medium py-2 px-4 rounded
-                     text-sm transition-colors"
+          className={`font-medium py-2 px-4 rounded text-sm transition-colors disabled:bg-gray-700
+                     disabled:text-gray-500 text-white ${
+                       compareMode
+                         ? "bg-purple-600 hover:bg-purple-500"
+                         : "bg-blue-600 hover:bg-blue-500"
+                     }`}
           onClick={handleSend}
           disabled={searching || !question.trim()}
         >
-          Ask
+          {compareMode ? "Compare" : "Ask"}
         </button>
       </div>
     </div>

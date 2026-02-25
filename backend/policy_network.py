@@ -33,12 +33,27 @@ SYSTEM_PROMPT = """\
 You are an expert Python programmer solving questions about video transcripts.
 
 ## REPL Environment
-- `context` — string variable with the FULL video transcript (with [MM:SS] timestamps)
+- `context` — string variable with the FULL transcript (with [MM:SS] timestamps)
 - `llm_query(prompt)` — call a sub-LLM (LIMITED to 3 calls per code block! Do NOT loop over chunks)
 - `print()` — output results (ALWAYS print your findings)
 - `FINAL_VAR(variable_name)` — mark a variable as the final answer
 
 Variables persist between code blocks.
+
+## MULTI-VIDEO CONTEXT
+The `context` variable may contain transcripts from MULTIPLE videos, separated by headers:
+```
+=== Video Title 1 ===
+[00:00] first line...
+...
+=== Video Title 2 ===
+[00:00] first line...
+```
+When multiple videos are present:
+- Use `re.split(r'^=== .+ ===$', context, flags=re.MULTILINE)` to split into per-video sections
+- Use `re.findall(r'^=== (.+) ===$', context, flags=re.MULTILINE)` to get video titles
+- Search ACROSS all videos for cross-cutting questions
+- Always note WHICH video a finding comes from
 
 ## CRITICAL RULES
 1. **NEVER** loop `llm_query()` over chunks — you only get 3 calls per block, and each takes ~5s.
@@ -52,16 +67,16 @@ Variables persist between code blocks.
 ```repl
 import re
 from collections import Counter
-# Extract all timestamped lines
-lines = context.split('\\n')
-print(f"Transcript: {len(lines)} lines, {len(context)} chars")
-# Find key topics by word frequency
-words = re.findall(r'[a-z]{4,}', context.lower())
-top = Counter(words).most_common(20)
-print("Top words:", top)
-# Extract first and last sections
-print("\\nOpening:", '\\n'.join(lines[:5]))
-print("\\nClosing:", '\\n'.join(lines[-5:]))
+# Check for multiple videos
+titles = re.findall(r'^=== (.+) ===$', context, re.MULTILINE)
+sections = re.split(r'^=== .+ ===$', context, flags=re.MULTILINE)
+sections = [s.strip() for s in sections if s.strip()]
+print(f"Videos: {len(titles)} — {titles}")
+print(f"Total: {len(context)} chars")
+for i, (title, sec) in enumerate(zip(titles, sections)):
+    lines = sec.strip().split('\\n')
+    print(f"\\n[{title}]: {len(lines)} lines, {len(sec)} chars")
+    print(f"  Opening: {lines[0] if lines else 'empty'}")
 ```
 """
 
@@ -100,15 +115,17 @@ async def _expand_question(
                 "role": "user",
                 "content": (
                     f"Question: {question}\n\n"
-                    f"The transcript is {ctx_len:,} characters long.\n\n"
+                    f"The context is {ctx_len:,} characters long and may contain MULTIPLE video transcripts "
+                    f"separated by '=== Title ===' headers.\n\n"
                     "Generate 2-3 DIFFERENT code strategies to answer this question. "
                     "Each strategy should be a separate ```repl block with a different approach.\n\n"
                     "IMPORTANT: For the FIRST round, do NOT use llm_query() — use fast Python only:\n"
-                    "- Strategy 1: Direct regex/string search for key terms\n"
-                    "- Strategy 2: Structural analysis (split by timestamps, count sections, extract headings)\n"
-                    "- Strategy 3: Statistical analysis (word frequency, key phrase extraction)\n\n"
+                    "- Strategy 1: First detect how many videos are in context, then direct regex/string search for key terms across ALL videos\n"
+                    "- Strategy 2: Structural analysis (split by video headers and timestamps, analyze each video section)\n"
+                    "- Strategy 3: Statistical/comparative analysis (word frequency, key phrases, compare across videos if multiple)\n\n"
                     "Keep each code block fast (< 5 seconds). Use print() to show results.\n"
-                    "Make sure each code block is self-contained and uses the `context` variable."
+                    "Make sure each code block is self-contained and uses the `context` variable.\n"
+                    "When multiple videos exist, always search ALL of them, not just the first."
                 ),
             },
         ],
@@ -157,8 +174,9 @@ async def _expand_with_history(
         "role": "user",
         "content": (
             f"Question: {question}\n"
-            f"Transcript length: {ctx_len:,} characters.\n"
-            "Use the `context` variable to answer."
+            f"Context length: {ctx_len:,} characters (may contain multiple video transcripts "
+            f"separated by '=== Title ===' headers).\n"
+            "Use the `context` variable to answer. Search ALL videos if multiple are present."
         ),
     })
     # Add previous REPL history
@@ -244,13 +262,15 @@ async def synthesize_answer(
                 "role": "system",
                 "content": (
                     "You synthesize comprehensive answers from multiple REPL analysis results. "
-                    "The results come from different code strategies that analyzed a video transcript.\n\n"
+                    "The results come from different code strategies that analyzed video transcript(s).\n\n"
                     "Guidelines:\n"
                     "- Combine insights from ALL results, prioritizing higher-scored ones\n"
+                    "- If multiple videos were analyzed, organize findings PER VIDEO with clear headers\n"
                     "- For summaries: be thorough, cover all major topics proportional to source length\n"
                     "- For specific questions: give a precise, evidence-backed answer\n"
+                    "- For cross-video questions: compare/contrast findings across videos\n"
                     "- Structure with sections/bullets for long answers\n"
-                    "- Include timestamps or quotes where available"
+                    "- Include timestamps or quotes where available, noting which video they're from"
                 ),
             },
             {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { WSEvent, TreeSnapshot } from "../types";
+import { WSEvent, TreeSnapshot, PlainRLMStep, ComparisonResult } from "../types";
 
 interface UseWebSocketReturn {
   connected: boolean;
@@ -9,6 +9,10 @@ interface UseWebSocketReturn {
   searching: boolean;
   contextChars: number;
   sendQuestion: (question: string, videoIds: string[]) => void;
+  sendCompare: (question: string, videoIds: string[]) => void;
+  comparing: boolean;
+  comparisonResult: ComparisonResult | null;
+  plainSteps: PlainRLMStep[];
 }
 
 export function useWebSocket(): UseWebSocketReturn {
@@ -22,6 +26,9 @@ export function useWebSocket(): UseWebSocketReturn {
   const [confidence, setConfidence] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const [contextChars, setContextChars] = useState(0);
+  const [comparing, setComparing] = useState(false);
+  const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
+  const [plainSteps, setPlainSteps] = useState<PlainRLMStep[]>([]);
 
   const connect = useCallback(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -63,7 +70,6 @@ export function useWebSocket(): UseWebSocketReturn {
   const handleMessage = useCallback((data: WSEvent) => {
     switch (data.event) {
       case "node_update":
-        // Tree snapshot includes all nodes with current visits/values
         setTree(data.tree_snapshot);
         break;
 
@@ -73,6 +79,8 @@ export function useWebSocket(): UseWebSocketReturn {
         setConfidence(null);
         setTree({});
         setContextChars(data.context_chars);
+        setPlainSteps([]);
+        setComparisonResult(null);
         break;
 
       case "answer_ready":
@@ -82,13 +90,28 @@ export function useWebSocket(): UseWebSocketReturn {
 
       case "search_complete":
         setSearching(false);
+        setComparing(false);
         setTree(data.tree);
         if (data.answer) setAnswer(data.answer);
         if (data.confidence != null) setConfidence(data.confidence);
         break;
 
+      case "plain_step":
+        setPlainSteps((prev) => [...prev, data.step]);
+        break;
+
+      case "comparison_complete":
+        setSearching(false);
+        setComparing(false);
+        setComparisonResult({ plain: data.plain, mcts: data.mcts });
+        setTree(data.mcts.tree);
+        setAnswer(data.mcts.answer);
+        setConfidence(data.mcts.confidence);
+        break;
+
       case "error":
         setSearching(false);
+        setComparing(false);
         console.error("WS error:", data.message);
         break;
 
@@ -108,9 +131,30 @@ export function useWebSocket(): UseWebSocketReturn {
   const sendQuestion = useCallback(
     (question: string, videoIds: string[]) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
+        setComparing(false);
+        setComparisonResult(null);
+        setPlainSteps([]);
         wsRef.current.send(
           JSON.stringify({
             type: "ask",
+            question,
+            video_ids: videoIds,
+          })
+        );
+      }
+    },
+    []
+  );
+
+  const sendCompare = useCallback(
+    (question: string, videoIds: string[]) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        setComparing(true);
+        setComparisonResult(null);
+        setPlainSteps([]);
+        wsRef.current.send(
+          JSON.stringify({
+            type: "compare",
             question,
             video_ids: videoIds,
           })
@@ -128,5 +172,9 @@ export function useWebSocket(): UseWebSocketReturn {
     searching,
     contextChars,
     sendQuestion,
+    sendCompare,
+    comparing,
+    comparisonResult,
+    plainSteps,
   };
 }

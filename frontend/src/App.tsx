@@ -3,6 +3,7 @@ import VideoInput from "./components/VideoInput";
 import ChatPanel from "./components/ChatPanel";
 import MCTSTreeViz from "./components/MCTSTreeViz";
 import NodeDetail from "./components/NodeDetail";
+import ComparisonView from "./components/ComparisonView";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { VideoInfo, ReasoningNode } from "./types";
 
@@ -18,26 +19,41 @@ export default function App() {
     searching,
     contextChars,
     sendQuestion,
+    sendCompare,
+    comparing,
+    comparisonResult,
+    plainSteps,
   } = useWebSocket();
 
   const handleTranscribed = useCallback((newVideos: VideoInfo[]) => {
     setVideos((prev) => [...prev, ...newVideos]);
   }, []);
 
+  const videoIds = videos
+    .filter((v) => v.video_id && !v.error)
+    .map((v) => v.video_id);
+
   const handleSendQuestion = useCallback(
     (question: string) => {
-      const videoIds = videos
-        .filter((v) => v.video_id && !v.error)
-        .map((v) => v.video_id);
       sendQuestion(question, videoIds);
       setSelectedNode(null);
     },
-    [videos, sendQuestion]
+    [videoIds, sendQuestion]
+  );
+
+  const handleSendCompare = useCallback(
+    (question: string) => {
+      sendCompare(question, videoIds);
+      setSelectedNode(null);
+    },
+    [videoIds, sendCompare]
   );
 
   const handleNodeClick = useCallback((node: ReasoningNode) => {
     setSelectedNode(node);
   }, []);
+
+  const showComparison = comparisonResult != null;
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -70,46 +86,62 @@ export default function App() {
           <VideoInput videos={videos} onTranscribed={handleTranscribed} />
           <div className="flex-1 min-h-0">
             <ChatPanel
-              answer={answer}
-              confidence={confidence}
+              answer={showComparison ? null : answer}
+              confidence={showComparison ? null : confidence}
               searching={searching}
               tree={tree}
               contextChars={contextChars}
+              comparing={comparing}
+              plainSteps={plainSteps}
               onSendQuestion={handleSendQuestion}
+              onSendCompare={handleSendCompare}
             />
           </div>
         </div>
 
-        {/* Center: Tree viz */}
-        <div className="col-span-6 overflow-auto">
-          <MCTSTreeViz tree={tree} onNodeClick={handleNodeClick} />
+        {/* Center + Right: either Comparison view or normal Tree + NodeDetail */}
+        {showComparison ? (
+          <div className="col-span-9 overflow-y-auto">
+            <ComparisonView
+              result={comparisonResult}
+              plainSteps={plainSteps}
+              onNodeClick={handleNodeClick}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Center: Tree viz */}
+            <div className="col-span-6 overflow-auto">
+              <MCTSTreeViz tree={tree} onNodeClick={handleNodeClick} />
 
-          {Object.keys(tree).length > 0 && (
-            <div className="mt-2 grid grid-cols-5 gap-2">
-              {(["question", "strategy", "code", "result", "answer"] as const).map(
-                (type) => {
-                  const count = Object.values(tree).filter(
-                    (n) => n.node_type === type
-                  ).length;
-                  return (
-                    <div
-                      key={type}
-                      className="bg-gray-900 border border-gray-800 rounded p-2 text-center"
-                    >
-                      <p className="text-xs text-gray-500">{type}</p>
-                      <p className="text-lg font-mono text-gray-300">{count}</p>
-                    </div>
-                  );
-                }
+              {Object.keys(tree).length > 0 && (
+                <div className="mt-2 grid grid-cols-5 gap-2">
+                  {(["question", "strategy", "code", "result", "answer"] as const).map(
+                    (type) => {
+                      const count = Object.values(tree).filter(
+                        (n) => n.node_type === type
+                      ).length;
+                      return (
+                        <div
+                          key={type}
+                          className="bg-gray-900 border border-gray-800 rounded p-2 text-center"
+                        >
+                          <p className="text-xs text-gray-500">{type}</p>
+                          <p className="text-lg font-mono text-gray-300">{count}</p>
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
 
-        {/* Right: Node detail */}
-        <div className="col-span-3 overflow-y-auto">
-          <NodeDetail node={selectedNode} />
-        </div>
+            {/* Right: Node detail */}
+            <div className="col-span-3 overflow-y-auto">
+              <NodeDetail node={selectedNode} />
+            </div>
+          </>
+        )}
       </main>
     </div>
   );
